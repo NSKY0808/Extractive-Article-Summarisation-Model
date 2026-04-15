@@ -1,0 +1,17 @@
+{
+  "sentence_classification": {
+    "accuracy": 0.7448842991011666,
+    "precision": 0.36059479553903345,
+    "recall": 0.2623985572587917,
+    "f1": 0.3037578288100209
+  },
+  "summarization": {
+    "rouge_1": 0.23689118839567594,
+    "rouge_2": 0.07927652540587127,
+    "rouge_l": 0.16156643876525437
+  },
+  "train_examples": 28529,
+  "validation_examples": 5229,
+  "train_records": 1000,
+  "validation_records": 200
+}
