@@ -1,35 +1,38 @@
-# PROJECT SPEC — Multi-Document News Summarization
+# PROJECT SPEC
+
+## Project Name
+
+Extractive Article Summarisation Model
 
 ## Objective
 
-Build an abstractive summarization system that:
+Build a lightweight supervised extractive summarization system for news articles that:
 
-* Takes clustered news articles (same event)
-* Produces a coherent, non-redundant summary
+- uses CNN/DailyMail as the source dataset
+- converts articles into sentence-level classification examples
+- predicts sentence importance with classical machine learning
+- generates summaries by selecting the best-ranked non-redundant sentences
+
+## Scope
+
+This repository currently implements single-article extractive summarization, not multi-document abstractive summarization.
 
 ## Constraints
 
-* Input may exceed model token limits
-* Articles contain redundancy and noise
-* No human-labeled summaries available
-
-## Current Approach
-
-* Use pretrained BART model
-* Generate pseudo-label summaries
-* Fine-tune model on clustered dataset
+- Must be explainable for academic evaluation
+- Must run on CPU or modest hardware
+- Must avoid transformer summarization models and LLM-based generation
+- Must use modular code and reusable pipeline stages
 
 ## Success Criteria
 
-* High ROUGE-L score on evaluation set
-* Low redundancy in summaries
-* Minimal hallucination
+- End-to-end training and inference scripts work
+- Sentence-level classifier metrics are reported
+- Summary-level ROUGE metrics are reported
+- Documentation matches the implemented codebase
 
 ## Non-Goals
 
-* Not building a general-purpose LLM
-* Not training transformer from scratch
-
-## System Type
-
-* Hybrid pipeline (extractive + abstractive)
+- Training a transformer from scratch
+- Building a production-scale summarization service
+- Multi-document fusion or meta-summary generation in the current version

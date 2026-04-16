@@ -1,25 +1,42 @@
 # MODEL STRATEGY
 
-## Model Used
+## Supported Models
 
-facebook/bart-large-cnn
+- `logistic_regression`
+- `linear_svm`
+- `random_forest`
+- `mlp`
 
-## Why This Model
+## Selection Principles
 
-* Pretrained for summarization
-* Handles noisy input well
-* Stable fine-tuning
+- Prefer explainable, CPU-friendly models.
+- Keep training feasible on modest hardware.
+- Use the same feature pipeline across models for fair comparison.
 
-## Input Strategy
+## Current Recommendation
 
-* Max token limit: 1024
-* Use chunking for long inputs
+Default teaching baseline:
 
-## Output Strategy
+- `logistic_regression`
 
-* Max summary length: 150 tokens
+Best summarization result in current experiments:
 
-## Future Upgrades
+- `random_forest`
 
-* PEGASUS for better quality
-* Longformer for long input handling
+## Feature Strategy
+
+All models use the same sentence representation:
+
+- TF-IDF sentence vectors
+- relative position
+- reverse position
+- token count
+- normalized sentence length
+- named-entity-count heuristic
+- number-presence flag
+
+## Explicit Non-Goals
+
+- No large language models
+- No pretrained abstractive summarizers
+- No transformer fine-tuning inside this repository

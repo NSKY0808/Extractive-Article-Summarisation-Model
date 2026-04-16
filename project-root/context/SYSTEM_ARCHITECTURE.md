@@ -1,24 +1,39 @@
 # SYSTEM ARCHITECTURE
 
-## Pipeline Overview
+## High-Level Flow
 
-1. Article Fetching
-2. Clustering by Event
-3. Sentence Filtering (extractive layer)
-4. Chunking (token limit handling)
-5. Abstractive Summarization (BART)
-6. Meta-Summary Generation
+1. Dataset loading
+2. Sentence tokenization
+3. ROUGE-based pseudo-label generation
+4. Feature extraction
+5. Sentence importance classification
+6. Sentence ranking
+7. Redundancy removal
+8. Summary assembly
+9. ROUGE evaluation
 
-## Key Principle
+## Module Layout
 
-DO NOT pass raw articles directly into model.
-
-## Design Decisions
-
-* Use hierarchical summarization
-* Use extractive filtering before transformer
-* Use pseudo-labeling for training
+- `src/dataset_loader.py` -> dataset access and pseudo-labeling
+- `src/data_pipeline.py` -> tokenization and low-level text utilities
+- `src/feature_pipeline.py` -> TF-IDF and dense sentence features
+- `models/extractive_classifier.py` -> model training, scoring, save, and load
+- `src/summarizer.py` -> ranking and summary generation
+- `src/evaluation.py` -> summary scoring
+- `scripts/*.py` -> command-line entrypoints
 
 ## Data Flow
 
-Cluster → Filter → Chunk → Summarize → Merge → Final Summary
+`article + reference summary`
+-> `sentence examples`
+-> `feature matrix`
+-> `classifier`
+-> `sentence scores`
+-> `redundancy filter`
+-> `extractive summary`
+
+## Design Principles
+
+- Keep training and inference paths separate but compatible.
+- Preserve narrative order after ranking.
+- Use sparse TF-IDF plus simple dense features for interpretability.

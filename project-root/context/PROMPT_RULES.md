@@ -1,24 +1,24 @@
-# AI PROMPT RULES
+# PROMPT RULES
 
-## General Behavior
+## General Guidance
 
-* Always follow pipeline structure
-* Do not invent new architecture without reason
-* Prefer modular code
+- Keep the repository aligned with the current extractive ML scope.
+- Prefer changing documentation and configs to reflect the implemented system rather than outdated plans.
+- Maintain consistency between `README.md`, `context/`, and the actual Python modules.
 
 ## When Writing Code
 
-* Use existing configs instead of hardcoding
-* Reuse utility functions
-* Follow naming conventions
+- Reuse the existing tokenizer, feature extractor, evaluator, and classifier wrapper where possible.
+- Favor simple, inspectable heuristics over opaque complexity.
+- Add new modules only when they have a clear pipeline responsibility.
 
-## When Generating Summaries
+## When Updating Docs
 
-* Avoid repetition
-* Maintain factual accuracy
-* Prefer concise language
+- Document the system as a classical extractive summarizer.
+- Include concrete commands and measured metrics when available.
+- Avoid references to BART, PEGASUS, or hierarchical abstractive pipelines unless the codebase actually supports them.
 
 ## When Unsure
 
-* Ask for clarification
-* Do not hallucinate missing components
+- Make the smallest consistent change that keeps the repo coherent.
+- Prefer documenting assumptions explicitly rather than leaving stale docs in place.

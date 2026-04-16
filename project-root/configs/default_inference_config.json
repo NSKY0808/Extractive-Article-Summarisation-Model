@@ -1,0 +1,12 @@
+{
+  "summarization": {
+    "top_n_sentences": 3,
+    "redundancy_threshold": 0.8,
+    "min_sentence_tokens": 4
+  },
+  "recommended_model": "random_forest",
+  "notes": [
+    "Use logistic_regression as the simplest baseline.",
+    "Use random_forest for the strongest held-out ROUGE in the current experiments."
+  ]
+}

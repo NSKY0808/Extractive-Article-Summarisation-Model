@@ -1,0 +1,29 @@
+{
+  "dataset": {
+    "name": "cnn_dailymail",
+    "version": "3.0.0",
+    "train_split": "train",
+    "validation_split": "validation",
+    "train_limit": 1000,
+    "validation_limit": 200
+  },
+  "labeling": {
+    "rouge_threshold": 0.2,
+    "min_sentence_tokens": 4
+  },
+  "features": {
+    "max_tfidf_features": 5000,
+    "min_df": 2,
+    "max_df": 0.95,
+    "ngram_range": [1, 2]
+  },
+  "model": {
+    "model_type": "logistic_regression",
+    "random_state": 42,
+    "max_iter": 1000
+  },
+  "summarization": {
+    "top_n_sentences": 3,
+    "redundancy_threshold": 0.8
+  }
+}
