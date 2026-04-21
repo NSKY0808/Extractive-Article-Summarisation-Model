@@ -7,7 +7,14 @@ from typing import Dict, List, Sequence
 
 from models.extractive_classifier import ExtractiveSentenceClassifier
 
-from .data_pipeline import build_tfidf_vectors, cosine_similarity, sentence_tokenize, word_tokenize
+from .data_pipeline import (
+    build_tfidf_vectors,
+    clean_sentence_text,
+    cosine_similarity,
+    is_boilerplate_sentence,
+    sentence_tokenize,
+    word_tokenize,
+)
 from .dataset_loader import SentenceClassificationExample
 
 
@@ -18,6 +25,8 @@ class SummarizationConfig:
     top_n_sentences: int = 3
     redundancy_threshold: float = 0.8
     min_sentence_tokens: int = 4
+    mmr_lambda: float = 0.85
+    max_candidates: int = 15
 
     def __post_init__(self) -> None:
         """Validate summarization settings."""
@@ -28,6 +37,10 @@ class SummarizationConfig:
             raise ValueError("redundancy_threshold must be between 0.0 and 1.0.")
         if self.min_sentence_tokens < 1:
             raise ValueError("min_sentence_tokens must be at least 1.")
+        if not 0.0 <= self.mmr_lambda <= 1.0:
+            raise ValueError("mmr_lambda must be between 0.0 and 1.0.")
+        if self.max_candidates < 1:
+            raise ValueError("max_candidates must be at least 1.")
 
 
 @dataclass(frozen=True)
@@ -42,28 +55,37 @@ class RankedSentence:
 def build_inference_examples(article_text: str, min_sentence_tokens: int = 4) -> List[SentenceClassificationExample]:
     """Convert article text into sentence-level examples for inference."""
 
-    sentences = sentence_tokenize(article_text)
-    sentence_count = len(sentences)
-    examples: List[SentenceClassificationExample] = []
+    raw_sentences = sentence_tokenize(article_text)
+    cleaned_sentences: List[tuple[int, str]] = []
 
-    for sentence_index, sentence_text in enumerate(sentences):
-        if len(word_tokenize(sentence_text)) < min_sentence_tokens:
+    for sentence_index, sentence_text in enumerate(raw_sentences):
+        cleaned_sentence = clean_sentence_text(sentence_text)
+        if not cleaned_sentence:
             continue
-        examples.append(
-            SentenceClassificationExample(
-                article_id="inference",
-                sentence_index=sentence_index,
-                sentence_count=sentence_count,
-                sentence_text=sentence_text,
-                article_text=article_text,
-                reference_summary="",
-                label=0,
-                rouge1_f1=0.0,
-                rouge_l_f1=0.0,
-            )
-        )
+        if is_boilerplate_sentence(cleaned_sentence, min_sentence_tokens):
+            continue
+        if len(word_tokenize(cleaned_sentence)) < min_sentence_tokens:
+            continue
+        cleaned_sentences.append((sentence_index, cleaned_sentence))
 
-    return examples
+    sentence_count = len(cleaned_sentences)
+    return [
+        SentenceClassificationExample(
+            article_id="inference",
+            sentence_index=position_index,
+            sentence_count=sentence_count,
+            sentence_text=sentence_text,
+            article_text=article_text,
+            reference_summary="",
+            label=0,
+            rouge1_f1=0.0,
+            rouge2_f1=0.0,
+            rouge_l_f1=0.0,
+            label_score=0.0,
+            original_sentence_index=sentence_index,
+        )
+        for position_index, (sentence_index, sentence_text) in enumerate(cleaned_sentences)
+    ]
 
 
 def rank_article_sentences(
@@ -81,7 +103,7 @@ def rank_article_sentences(
     scores = classifier.predict_scores(examples)
     ranked = [
         RankedSentence(
-            sentence_index=example.sentence_index,
+            sentence_index=example.original_sentence_index,
             sentence_text=example.sentence_text,
             score=float(score),
         )
@@ -118,12 +140,47 @@ def remove_redundant_ranked_sentences(
 
 def select_summary_sentences(
     ranked_sentences: Sequence[RankedSentence],
-    top_n_sentences: int,
+    config: SummarizationConfig,
 ) -> List[RankedSentence]:
-    """Select the top ranked sentences and restore original article order."""
+    """Select summary sentences using maximal marginal relevance."""
 
-    selected = list(ranked_sentences[:top_n_sentences])
-    return sorted(selected, key=lambda item: item.sentence_index)
+    if not ranked_sentences:
+        return []
+
+    candidate_sentences = list(ranked_sentences[: config.max_candidates])
+    vectors = build_tfidf_vectors([sentence.sentence_text for sentence in candidate_sentences])
+    selected_indices: List[int] = []
+    remaining_indices = list(range(len(candidate_sentences)))
+
+    while remaining_indices and len(selected_indices) < config.top_n_sentences:
+        best_index = None
+        best_score = float("-inf")
+
+        for candidate_index in remaining_indices:
+            candidate_score = candidate_sentences[candidate_index].score
+            if not selected_indices:
+                mmr_score = candidate_score
+            else:
+                max_similarity = max(
+                    cosine_similarity(vectors[candidate_index], vectors[selected_index])
+                    for selected_index in selected_indices
+                )
+                if max_similarity >= config.redundancy_threshold:
+                    continue
+                mmr_score = config.mmr_lambda * candidate_score - (1.0 - config.mmr_lambda) * max_similarity
+
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_index = candidate_index
+
+        if best_index is None:
+            break
+
+        selected_indices.append(best_index)
+        remaining_indices.remove(best_index)
+
+    selected_sentences = [candidate_sentences[index] for index in selected_indices]
+    return sorted(selected_sentences, key=lambda item: item.sentence_index)
 
 
 def summarize_article(
@@ -137,12 +194,9 @@ def summarize_article(
     ranked_sentences = rank_article_sentences(article_text, classifier, summarization_config)
     filtered_sentences = remove_redundant_ranked_sentences(
         ranked_sentences,
-        redundancy_threshold=summarization_config.redundancy_threshold,
+        redundancy_threshold=min(0.98, summarization_config.redundancy_threshold + 0.15),
     )
-    selected_sentences = select_summary_sentences(
-        filtered_sentences,
-        top_n_sentences=summarization_config.top_n_sentences,
-    )
+    selected_sentences = select_summary_sentences(filtered_sentences, summarization_config)
     summary_text = " ".join(sentence.sentence_text for sentence in selected_sentences)
 
     return {

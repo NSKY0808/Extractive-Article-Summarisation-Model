@@ -25,24 +25,49 @@ from src.feature_pipeline import SentenceFeatureConfig  # noqa: E402
 from src.summarizer import SummarizationConfig  # noqa: E402
 
 
+def _parse_hidden_layer_sizes(value: str) -> tuple[int, ...]:
+    """Parse a comma-separated hidden-layer specification."""
+
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(description="Train a classical extractive summarizer.")
     parser.add_argument("--train-split", default="train", help="Training dataset split.")
     parser.add_argument("--validation-split", default="validation", help="Validation dataset split.")
-    parser.add_argument("--train-limit", type=int, default=1000, help="Optional number of training records.")
+    parser.add_argument("--train-limit", type=int, default=1500, help="Optional number of training records.")
     parser.add_argument("--validation-limit", type=int, default=200, help="Optional number of validation records.")
-    parser.add_argument("--rouge-threshold", type=float, default=0.2, help="Threshold for positive labels.")
+    parser.add_argument("--label-threshold", type=float, default=0.18, help="Threshold for positive labels.")
     parser.add_argument(
         "--model-type",
         default="logistic_regression",
         choices=["logistic_regression", "linear_svm", "random_forest", "mlp"],
         help="Classifier family to train.",
     )
-    parser.add_argument("--max-tfidf-features", type=int, default=5000, help="Maximum TF-IDF vocabulary size.")
+    parser.add_argument("--max-tfidf-features", type=int, default=8000, help="Maximum TF-IDF vocabulary size.")
     parser.add_argument("--min-df", type=int, default=2, help="Minimum document frequency for TF-IDF features.")
+    parser.add_argument("--max-df", type=float, default=0.9, help="Maximum document frequency for TF-IDF features.")
     parser.add_argument("--top-n-sentences", type=int, default=3, help="Number of sentences per generated summary.")
+    parser.add_argument("--redundancy-threshold", type=float, default=0.8, help="Redundancy filter threshold.")
+    parser.add_argument("--mmr-lambda", type=float, default=0.85, help="MMR relevance vs diversity balance.")
+    parser.add_argument("--max-candidates", type=int, default=15, help="How many ranked sentences to consider.")
+    parser.add_argument("--n-estimators", type=int, default=300, help="Number of trees for random forest.")
+    parser.add_argument("--logistic-c", type=float, default=2.0, help="Inverse regularization for logistic regression.")
+    parser.add_argument("--svm-c", type=float, default=0.8, help="Inverse regularization for linear SVM.")
+    parser.add_argument(
+        "--hidden-layer-sizes",
+        type=_parse_hidden_layer_sizes,
+        default=(128, 64),
+        help="Comma-separated hidden sizes for MLP, for example 128,64.",
+    )
+    parser.add_argument(
+        "--prefer-local-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prefer the local Hugging Face cache and avoid network access when possible.",
+    )
     parser.add_argument(
         "--output-model-path",
         type=Path,
@@ -58,13 +83,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_split(split: str, sample_limit: int | None):
+def load_split(split: str, sample_limit: int | None, prefer_local_cache: bool):
     """Load one dataset split from CNN/DailyMail."""
 
     loader = CNNDailyMailDatasetLoader(
         CNNDailyMailLoaderConfig(
             split=split,
             sample_limit=sample_limit,
+            prefer_local_cache=prefer_local_cache,
         )
     )
     return loader.load_records()
@@ -74,19 +100,26 @@ def main() -> None:
     """Train the extractive classifier and evaluate it on validation data."""
 
     args = parse_args()
-    labeling_config = SentenceLabelingConfig(rouge_threshold=args.rouge_threshold)
+    labeling_config = SentenceLabelingConfig(label_threshold=args.label_threshold)
 
-    train_records = load_split(args.train_split, args.train_limit)
-    validation_records = load_split(args.validation_split, args.validation_limit)
+    train_records = load_split(args.train_split, args.train_limit, args.prefer_local_cache)
+    validation_records = load_split(args.validation_split, args.validation_limit, args.prefer_local_cache)
 
     train_examples = build_sentence_classification_dataset(train_records, labeling_config)
     validation_examples = build_sentence_classification_dataset(validation_records, labeling_config)
 
     classifier = ExtractiveSentenceClassifier(
-        model_config=ExtractiveModelConfig(model_type=args.model_type),
+        model_config=ExtractiveModelConfig(
+            model_type=args.model_type,
+            n_estimators=args.n_estimators,
+            logistic_c=args.logistic_c,
+            svm_c=args.svm_c,
+            hidden_layer_sizes=args.hidden_layer_sizes,
+        ),
         feature_config=SentenceFeatureConfig(
             max_tfidf_features=args.max_tfidf_features,
             min_df=args.min_df,
+            max_df=args.max_df,
         ),
     )
     classifier.fit(train_examples)
@@ -95,7 +128,12 @@ def main() -> None:
     summary_metrics = evaluate_records(
         validation_records,
         classifier,
-        config=SummarizationConfig(top_n_sentences=args.top_n_sentences),
+        config=SummarizationConfig(
+            top_n_sentences=args.top_n_sentences,
+            redundancy_threshold=args.redundancy_threshold,
+            mmr_lambda=args.mmr_lambda,
+            max_candidates=args.max_candidates,
+        ),
     )
 
     classifier.save(args.output_model_path)
@@ -111,6 +149,7 @@ def main() -> None:
         "validation_examples": len(validation_examples),
         "train_records": len(train_records),
         "validation_records": len(validation_records),
+        "model_type": args.model_type,
     }
 
     if args.metrics_output_path is not None:

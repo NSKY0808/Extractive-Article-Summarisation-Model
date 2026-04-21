@@ -27,6 +27,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="test", help="Dataset split to evaluate.")
     parser.add_argument("--sample-limit", type=int, default=200, help="Optional number of records to evaluate.")
     parser.add_argument("--top-n-sentences", type=int, default=3, help="Number of sentences to include in summaries.")
+    parser.add_argument("--redundancy-threshold", type=float, default=0.8, help="Redundancy filter threshold.")
+    parser.add_argument("--mmr-lambda", type=float, default=0.85, help="MMR relevance vs diversity balance.")
+    parser.add_argument("--max-candidates", type=int, default=15, help="How many ranked sentences to consider.")
+    parser.add_argument(
+        "--prefer-local-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prefer the local Hugging Face cache and avoid network access when possible.",
+    )
     parser.add_argument(
         "--output-path",
         type=Path,
@@ -45,13 +54,19 @@ def main() -> None:
         CNNDailyMailLoaderConfig(
             split=args.split,
             sample_limit=args.sample_limit,
+            prefer_local_cache=args.prefer_local_cache,
         )
     )
     records = loader.load_records()
     metrics = evaluate_records(
         records,
         classifier,
-        config=SummarizationConfig(top_n_sentences=args.top_n_sentences),
+        config=SummarizationConfig(
+            top_n_sentences=args.top_n_sentences,
+            redundancy_threshold=args.redundancy_threshold,
+            mmr_lambda=args.mmr_lambda,
+            max_candidates=args.max_candidates,
+        ),
     )
 
     if args.output_path is not None:

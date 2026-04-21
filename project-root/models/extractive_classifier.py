@@ -26,8 +26,17 @@ class ExtractiveModelConfig:
     random_state: int = 42
     max_iter: int = 1000
     class_weight: str | None = "balanced"
-    n_estimators: int = 200
-    hidden_layer_sizes: tuple[int, ...] = (64, 32)
+    n_estimators: int = 300
+    logistic_c: float = 2.0
+    svm_c: float = 0.8
+    random_forest_min_samples_leaf: int = 2
+    random_forest_min_samples_split: int = 4
+    random_forest_max_depth: int | None = None
+    hidden_layer_sizes: tuple[int, ...] = (128, 64)
+    mlp_alpha: float = 0.0005
+    mlp_learning_rate_init: float = 0.001
+    mlp_validation_fraction: float = 0.1
+    mlp_n_iter_no_change: int = 10
 
     def __post_init__(self) -> None:
         """Validate model settings."""
@@ -41,12 +50,15 @@ class ExtractiveModelConfig:
             raise ValueError("n_estimators must be at least 1.")
         if not self.hidden_layer_sizes:
             raise ValueError("hidden_layer_sizes must contain at least one layer.")
+        if self.logistic_c <= 0.0 or self.svm_c <= 0.0:
+            raise ValueError("Regularization strengths must be positive.")
 
 
 def _require_sklearn():
     """Import scikit-learn lazily with a friendly error message."""
 
     try:
+        from sklearn.calibration import CalibratedClassifierCV
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.linear_model import LogisticRegression
         from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
@@ -59,6 +71,7 @@ def _require_sklearn():
         ) from error
 
     return {
+        "CalibratedClassifierCV": CalibratedClassifierCV,
         "LogisticRegression": LogisticRegression,
         "LinearSVC": LinearSVC,
         "RandomForestClassifier": RandomForestClassifier,
@@ -93,26 +106,40 @@ class ExtractiveSentenceClassifier:
 
         if self.model_config.model_type == "logistic_regression":
             return sklearn_objects["LogisticRegression"](
+                C=self.model_config.logistic_c,
                 max_iter=self.model_config.max_iter,
                 random_state=self.model_config.random_state,
                 class_weight=self.model_config.class_weight,
+                solver="liblinear",
             )
         if self.model_config.model_type == "linear_svm":
-            return sklearn_objects["LinearSVC"](
+            base_model = sklearn_objects["LinearSVC"](
+                C=self.model_config.svm_c,
                 max_iter=self.model_config.max_iter,
                 random_state=self.model_config.random_state,
                 class_weight=self.model_config.class_weight,
             )
+            return sklearn_objects["CalibratedClassifierCV"](base_model, cv=3, method="sigmoid")
         if self.model_config.model_type == "random_forest":
             return sklearn_objects["RandomForestClassifier"](
                 n_estimators=self.model_config.n_estimators,
                 random_state=self.model_config.random_state,
                 class_weight=self.model_config.class_weight,
+                min_samples_leaf=self.model_config.random_forest_min_samples_leaf,
+                min_samples_split=self.model_config.random_forest_min_samples_split,
+                max_depth=self.model_config.random_forest_max_depth,
+                max_features="sqrt",
+                n_jobs=1,
             )
         return sklearn_objects["MLPClassifier"](
             hidden_layer_sizes=self.model_config.hidden_layer_sizes,
             max_iter=self.model_config.max_iter,
             random_state=self.model_config.random_state,
+            alpha=self.model_config.mlp_alpha,
+            learning_rate_init=self.model_config.mlp_learning_rate_init,
+            early_stopping=True,
+            validation_fraction=self.model_config.mlp_validation_fraction,
+            n_iter_no_change=self.model_config.mlp_n_iter_no_change,
         )
 
     def fit(self, examples: Sequence[SentenceClassificationExample]) -> "ExtractiveSentenceClassifier":
@@ -123,7 +150,12 @@ class ExtractiveSentenceClassifier:
 
         features = self.feature_extractor.fit_transform(examples)
         labels = self.feature_extractor.extract_labels(examples)
-        self.model.fit(features, labels)
+        sample_weights = self.feature_extractor.extract_sample_weights(examples)
+
+        if self.model_config.model_type == "mlp":
+            self.model.fit(features, labels)
+        else:
+            self.model.fit(features, labels, sample_weight=sample_weights)
         self.is_fitted = True
         return self
 

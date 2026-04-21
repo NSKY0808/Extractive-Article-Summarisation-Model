@@ -27,7 +27,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare sentence-level extractive labels.")
     parser.add_argument("--split", default="train", help="Dataset split to load.")
     parser.add_argument("--sample-limit", type=int, default=None, help="Optional maximum number of records.")
-    parser.add_argument("--rouge-threshold", type=float, default=0.2, help="ROUGE threshold for positive labels.")
+    parser.add_argument("--label-threshold", type=float, default=0.18, help="Label threshold for positive labels.")
+    parser.add_argument(
+        "--prefer-local-cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prefer the local Hugging Face cache and avoid network access when possible.",
+    )
     parser.add_argument(
         "--output-path",
         type=Path,
@@ -45,12 +51,13 @@ def main() -> None:
         CNNDailyMailLoaderConfig(
             split=args.split,
             sample_limit=args.sample_limit,
+            prefer_local_cache=args.prefer_local_cache,
         )
     )
     records = loader.load_records()
     examples = build_sentence_classification_dataset(
         records,
-        config=SentenceLabelingConfig(rouge_threshold=args.rouge_threshold),
+        config=SentenceLabelingConfig(label_threshold=args.label_threshold),
     )
 
     args.output_path.parent.mkdir(parents=True, exist_ok=True)

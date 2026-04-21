@@ -11,9 +11,11 @@ It provides:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+import os
 from typing import Iterable, Iterator, List, Mapping, Optional, Sequence
 
-from .data_pipeline import sentence_tokenize, word_tokenize
+from .data_pipeline import clean_sentence_text, is_boilerplate_sentence, sentence_tokenize, word_tokenize
 
 
 @dataclass(frozen=True)
@@ -28,22 +30,36 @@ class CNNDailyMailLoaderConfig:
     article_field: str = "article"
     summary_field: str = "highlights"
     id_field: str = "id"
+    prefer_local_cache: bool = True
+    allow_remote_fallback: bool = False
 
 
 @dataclass(frozen=True)
 class SentenceLabelingConfig:
     """Configuration for sentence-level pseudo-label generation."""
 
-    rouge_threshold: float = 0.2
+    label_threshold: float = 0.18
     min_sentence_tokens: int = 4
+    min_positive_sentences: int = 1
+    max_positive_fraction: float = 0.35
+    rouge1_weight: float = 0.35
+    rouge2_weight: float = 0.20
+    rouge_l_weight: float = 0.45
 
     def __post_init__(self) -> None:
         """Validate sentence labeling settings."""
 
-        if not 0.0 <= self.rouge_threshold <= 1.0:
-            raise ValueError("rouge_threshold must be between 0.0 and 1.0.")
+        if not 0.0 <= self.label_threshold <= 1.0:
+            raise ValueError("label_threshold must be between 0.0 and 1.0.")
         if self.min_sentence_tokens < 1:
             raise ValueError("min_sentence_tokens must be at least 1.")
+        if self.min_positive_sentences < 0:
+            raise ValueError("min_positive_sentences cannot be negative.")
+        if not 0.0 < self.max_positive_fraction <= 1.0:
+            raise ValueError("max_positive_fraction must be between 0.0 and 1.0.")
+        total_weight = self.rouge1_weight + self.rouge2_weight + self.rouge_l_weight
+        if total_weight <= 0.0:
+            raise ValueError("At least one ROUGE weight must be positive.")
 
 
 @dataclass(frozen=True)
@@ -68,7 +84,22 @@ class SentenceClassificationExample:
     reference_summary: str
     label: int
     rouge1_f1: float
+    rouge2_f1: float = 0.0
+    rouge_l_f1: float = 0.0
+    label_score: float = 0.0
+    original_sentence_index: int = 0
+
+
+@dataclass(frozen=True)
+class ScoredSentence:
+    """Intermediate container used for pseudo-label generation."""
+
+    sentence_index: int
+    sentence_text: str
+    rouge1_f1: float
+    rouge2_f1: float
     rouge_l_f1: float
+    label_score: float
 
 
 def _safe_record_id(record: Mapping[str, object], index: int, id_field: str) -> str:
@@ -81,16 +112,16 @@ def _safe_record_id(record: Mapping[str, object], index: int, id_field: str) -> 
 
 
 def _require_datasets_library():
-    """Import the datasets library lazily with a friendly error message."""
+    """Import datasets objects lazily with a friendly error message."""
 
     try:
-        from datasets import load_dataset
+        from datasets import DownloadConfig, load_dataset
     except ImportError as error:
         raise ImportError(
             "The 'datasets' package is required to load CNN/DailyMail. "
             "Install it with 'pip install datasets'."
         ) from error
-    return load_dataset
+    return DownloadConfig, load_dataset
 
 
 def _generate_ngrams(tokens: Sequence[str], n: int) -> List[tuple[str, ...]]:
@@ -164,6 +195,23 @@ def rouge_l_f1(candidate_text: str, reference_text: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def compute_label_score(
+    rouge1_f1: float,
+    rouge2_f1: float,
+    rouge_l_f1: float,
+    config: SentenceLabelingConfig,
+) -> float:
+    """Combine ROUGE signals into a single label score."""
+
+    total_weight = config.rouge1_weight + config.rouge2_weight + config.rouge_l_weight
+    weighted_score = (
+        config.rouge1_weight * rouge1_f1
+        + config.rouge2_weight * rouge2_f1
+        + config.rouge_l_weight * rouge_l_f1
+    )
+    return weighted_score / total_weight
+
+
 class CNNDailyMailDatasetLoader:
     """Load article-summary pairs from the CNN/DailyMail dataset."""
 
@@ -175,13 +223,41 @@ class CNNDailyMailDatasetLoader:
     def load_records(self) -> List[ArticleSummaryRecord]:
         """Load a dataset split into a list of article-summary records."""
 
-        load_dataset = _require_datasets_library()
-        dataset = load_dataset(
-            self.config.dataset_name,
-            self.config.dataset_version,
-            split=self.config.split,
-            streaming=self.config.streaming,
-        )
+        if self.config.prefer_local_cache:
+            os.environ["HF_DATASETS_OFFLINE"] = "1"
+            os.environ["HF_HUB_OFFLINE"] = "1"
+
+        DownloadConfig, load_dataset = _require_datasets_library()
+        dataset = None
+
+        if self.config.prefer_local_cache:
+            try:
+                from datasets import config as datasets_config
+
+                datasets_config.HF_DATASETS_OFFLINE = True
+            except Exception:
+                pass
+
+            try:
+                dataset = load_dataset(
+                    self.config.dataset_name,
+                    self.config.dataset_version,
+                    split=self.config.split,
+                    streaming=self.config.streaming,
+                    download_config=DownloadConfig(local_files_only=True),
+                )
+            except Exception:
+                dataset = None
+                if not self.config.allow_remote_fallback:
+                    raise
+
+        if dataset is None:
+            dataset = load_dataset(
+                self.config.dataset_name,
+                self.config.dataset_version,
+                split=self.config.split,
+                streaming=self.config.streaming,
+            )
 
         records: List[ArticleSummaryRecord] = []
         for index, record in enumerate(dataset):
@@ -211,6 +287,64 @@ class CNNDailyMailDatasetLoader:
             yield record
 
 
+def _collect_scored_sentences(
+    record: ArticleSummaryRecord,
+    config: SentenceLabelingConfig,
+) -> List[ScoredSentence]:
+    """Create scored sentences for one article before label assignment."""
+
+    scored_sentences: List[ScoredSentence] = []
+    for sentence_index, sentence_text in enumerate(sentence_tokenize(record.article_text)):
+        cleaned_sentence = clean_sentence_text(sentence_text)
+        if not cleaned_sentence:
+            continue
+        if is_boilerplate_sentence(cleaned_sentence, config.min_sentence_tokens):
+            continue
+        if len(word_tokenize(cleaned_sentence)) < config.min_sentence_tokens:
+            continue
+
+        rouge1_f1 = rouge_n_f1(cleaned_sentence, record.summary_text, n=1)
+        rouge2_f1 = rouge_n_f1(cleaned_sentence, record.summary_text, n=2)
+        rouge_l_value = rouge_l_f1(cleaned_sentence, record.summary_text)
+        label_score = compute_label_score(rouge1_f1, rouge2_f1, rouge_l_value, config)
+        scored_sentences.append(
+            ScoredSentence(
+                sentence_index=sentence_index,
+                sentence_text=cleaned_sentence,
+                rouge1_f1=rouge1_f1,
+                rouge2_f1=rouge2_f1,
+                rouge_l_f1=rouge_l_value,
+                label_score=label_score,
+            )
+        )
+    return scored_sentences
+
+
+def _select_positive_sentence_indices(
+    scored_sentences: Sequence[ScoredSentence],
+    config: SentenceLabelingConfig,
+) -> set[int]:
+    """Choose which sentence indices should receive positive labels."""
+
+    if not scored_sentences:
+        return set()
+
+    sorted_indices = sorted(
+        range(len(scored_sentences)),
+        key=lambda index: scored_sentences[index].label_score,
+        reverse=True,
+    )
+    required_positive = min(config.min_positive_sentences, len(scored_sentences))
+    maximum_positive = max(required_positive, math.ceil(len(scored_sentences) * config.max_positive_fraction))
+
+    positive_indices = {
+        index for index, sentence in enumerate(scored_sentences) if sentence.label_score >= config.label_threshold
+    }
+    positive_indices.update(sorted_indices[:required_positive])
+    capped_positive = set(sorted_indices[:maximum_positive])
+    return positive_indices.intersection(capped_positive)
+
+
 def generate_sentence_labels(
     record: ArticleSummaryRecord,
     config: SentenceLabelingConfig | None = None,
@@ -218,32 +352,27 @@ def generate_sentence_labels(
     """Convert one article-summary pair into sentence-level classification examples."""
 
     labeling_config = config or SentenceLabelingConfig()
-    sentences = sentence_tokenize(record.article_text)
-    sentence_count = len(sentences)
-    examples: List[SentenceClassificationExample] = []
+    scored_sentences = _collect_scored_sentences(record, labeling_config)
+    positive_indices = _select_positive_sentence_indices(scored_sentences, labeling_config)
+    sentence_count = len(scored_sentences)
 
-    for sentence_index, sentence_text in enumerate(sentences):
-        if len(word_tokenize(sentence_text)) < labeling_config.min_sentence_tokens:
-            continue
-
-        rouge1 = rouge_n_f1(sentence_text, record.summary_text, n=1)
-        rouge_l = rouge_l_f1(sentence_text, record.summary_text)
-        label = int(max(rouge1, rouge_l) >= labeling_config.rouge_threshold)
-        examples.append(
-            SentenceClassificationExample(
-                article_id=record.article_id,
-                sentence_index=sentence_index,
-                sentence_count=sentence_count,
-                sentence_text=sentence_text,
-                article_text=record.article_text,
-                reference_summary=record.summary_text,
-                label=label,
-                rouge1_f1=rouge1,
-                rouge_l_f1=rouge_l,
-            )
+    return [
+        SentenceClassificationExample(
+            article_id=record.article_id,
+            sentence_index=index,
+            sentence_count=sentence_count,
+            sentence_text=sentence.sentence_text,
+            article_text=record.article_text,
+            reference_summary=record.summary_text,
+            label=int(index in positive_indices),
+            rouge1_f1=sentence.rouge1_f1,
+            rouge2_f1=sentence.rouge2_f1,
+            rouge_l_f1=sentence.rouge_l_f1,
+            label_score=sentence.label_score,
+            original_sentence_index=sentence.sentence_index,
         )
-
-    return examples
+        for index, sentence in enumerate(scored_sentences)
+    ]
 
 
 def build_sentence_classification_dataset(
@@ -266,6 +395,7 @@ __all__ = [
     "SentenceClassificationExample",
     "SentenceLabelingConfig",
     "build_sentence_classification_dataset",
+    "compute_label_score",
     "generate_sentence_labels",
     "rouge_l_f1",
     "rouge_n_f1",

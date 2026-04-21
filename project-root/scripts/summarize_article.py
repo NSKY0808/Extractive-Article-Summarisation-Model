@@ -24,12 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--text", default=None, help="Raw article text.")
     parser.add_argument("--input-file", type=Path, default=None, help="Path to a file containing article text.")
     parser.add_argument("--top-n-sentences", type=int, default=3, help="Number of sentences in the summary.")
-    parser.add_argument(
-        "--redundancy-threshold",
-        type=float,
-        default=0.8,
-        help="Cosine similarity threshold for duplicate removal.",
-    )
+    parser.add_argument("--redundancy-threshold", type=float, default=0.8, help="Cosine similarity threshold.")
+    parser.add_argument("--mmr-lambda", type=float, default=0.85, help="MMR relevance vs diversity balance.")
+    parser.add_argument("--max-candidates", type=int, default=15, help="How many ranked sentences to consider.")
     return parser.parse_args()
 
 
@@ -55,6 +52,8 @@ def main() -> None:
         config=SummarizationConfig(
             top_n_sentences=args.top_n_sentences,
             redundancy_threshold=args.redundancy_threshold,
+            mmr_lambda=args.mmr_lambda,
+            max_candidates=args.max_candidates,
         ),
     )
     print(prediction["summary_text"])
