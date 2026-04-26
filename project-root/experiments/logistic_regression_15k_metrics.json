@@ -1,0 +1,18 @@
+{
+  "sentence_classification": {
+    "accuracy": 0.7624351091638747,
+    "precision": 0.29569103521878337,
+    "recall": 0.6539312582976841,
+    "f1": 0.4072389876441137
+  },
+  "summarization": {
+    "rouge_1": 0.2880912989244414,
+    "rouge_2": 0.11088887441228394,
+    "rouge_l": 0.19116565948202768
+  },
+  "train_examples": 423359,
+  "validation_examples": 54322,
+  "train_records": 15000,
+  "validation_records": 2000,
+  "model_type": "logistic_regression"
+}

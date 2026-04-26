@@ -2,6 +2,8 @@
 
 ## 🚀 Start Here
 
+The 15k production models are ready to use! Just run one command.
+
 ### Option A: One-Command Startup (Recommended)
 
 **Windows:**
@@ -17,7 +19,7 @@ start.bat
 This will:
 1. Check prerequisites
 2. Install dependencies
-3. Start Flask API (port 5000)
+3. Start Flask API (port 5000) with 15k models loaded
 4. Start React frontend (port 3000)
 5. Open browser to http://localhost:3000
 
@@ -25,47 +27,51 @@ This will:
 
 **Step 1 - Start Flask API (Terminal 1):**
 ```bash
-cd api
+cd project-root/api
 pip install -r requirements.txt
 python app.py
 ```
 
+API will output which 15k models are loaded.
+
 **Step 2 - Start React (Terminal 2):**
 ```bash
-cd frontend
+cd project-root/frontend
 npm install
 npm start
 ```
 
 Access the app at http://localhost:3000
 
-## 📊 Training Models on 15k Dataset
+## 📊 15k Models Status
 
-### Quick Train All Models (Sequential)
+✅ **All four models trained on 15,000 records:**
+- Logistic Regression (ROUGE-1: 0.288)
+- Linear SVM (ROUGE-1: 0.289)
+- Random Forest (ROUGE-1: 0.307) - Best performer
+- MLP (ROUGE-1: 0.296)
+
+Models located in: `project-root/experiments/*_15k_model.pkl`
+
+## ♻️ Retraining Models (Optional)
+
+To retrain all 15k models on Windows:
 
 ```bash
-# From project-root directory
 cd project-root
-
-# For each model type, run:
-python scripts/train_extractive_model.py \
-  --model-type [logistic_regression|linear_svm|random_forest|mlp] \
-  --train-limit 15000 \
-  --validation-limit 2000 \
-  --output-model-path experiments/[model_type]_15k_model.pkl \
-  --max-tfidf-features 8000
+scripts\train_all_15k.bat
 ```
 
-**Expected Duration:**
+Expected duration: **4-8 hours total**
 - Logistic Regression: 2-3 min
 - Linear SVM: 2-3 min
 - Random Forest: 60-90 min
 - MLP: 120-180 min
-- **Total: ~4-8 hours**
 
-### Using Bash Script (Linux/Mac)
+To retrain on Linux/Mac:
 
 ```bash
+cd project-root
 chmod +x scripts/train_all_15k.sh
 ./scripts/train_all_15k.sh
 ```
@@ -92,11 +98,14 @@ chmod +x scripts/train_all_15k.sh
 | File | Purpose |
 |------|---------|
 | `start.bat` / `start.sh` | One-command startup |
-| `SETUP_GUIDE.md` | Complete setup guide |
-| `IMPLEMENTATION_SUMMARY.md` | What was created |
-| `api/app.py` | Flask backend |
-| `frontend/src/App.js` | React main app |
-| `scripts/train_extractive_model.py` | Model training |
+| `QUICK_START.md` | This file |
+| `README.md` | Full documentation |
+| `SETUP_GUIDE.md` | Detailed setup guide |
+| `project-root/api/app.py` | Flask API with 15k models |
+| `project-root/frontend/src/App.js` | React main app |
+| `project-root/scripts/train_extractive_model.py` | Model training script |
+| `project-root/experiments/*_15k_model.pkl` | Production models |
+
 
 ## 🔧 Troubleshooting
 
