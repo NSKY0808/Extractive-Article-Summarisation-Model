@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -96,17 +97,41 @@ def load_split(split: str, sample_limit: int | None, prefer_local_cache: bool):
     return loader.load_records()
 
 
+def log_stage(message: str, start_time: float) -> None:
+    """Print a timestamped training progress message."""
+
+    elapsed_seconds = time.perf_counter() - start_time
+    elapsed_minutes = elapsed_seconds / 60.0
+    print(f"[{elapsed_minutes:7.2f} min] {message}", flush=True)
+
+
 def main() -> None:
     """Train the extractive classifier and evaluate it on validation data."""
 
     args = parse_args()
+    run_start = time.perf_counter()
     labeling_config = SentenceLabelingConfig(label_threshold=args.label_threshold)
 
+    log_stage(
+        f"Starting training for model_type={args.model_type}, train_limit={args.train_limit}, "
+        f"validation_limit={args.validation_limit}",
+        run_start,
+    )
+
     train_records = load_split(args.train_split, args.train_limit, args.prefer_local_cache)
+    log_stage(f"Loaded {len(train_records)} training records from split='{args.train_split}'", run_start)
+
     validation_records = load_split(args.validation_split, args.validation_limit, args.prefer_local_cache)
+    log_stage(
+        f"Loaded {len(validation_records)} validation records from split='{args.validation_split}'",
+        run_start,
+    )
 
     train_examples = build_sentence_classification_dataset(train_records, labeling_config)
+    log_stage(f"Built {len(train_examples)} training sentence examples", run_start)
+
     validation_examples = build_sentence_classification_dataset(validation_records, labeling_config)
+    log_stage(f"Built {len(validation_examples)} validation sentence examples", run_start)
 
     classifier = ExtractiveSentenceClassifier(
         model_config=ExtractiveModelConfig(
@@ -122,9 +147,13 @@ def main() -> None:
             max_df=args.max_df,
         ),
     )
+    log_stage("Fitting classifier", run_start)
     classifier.fit(train_examples)
+    log_stage("Finished classifier fit", run_start)
 
     sentence_metrics = classifier.evaluate(validation_examples)
+    log_stage("Computed sentence-level validation metrics", run_start)
+
     summary_metrics = evaluate_records(
         validation_records,
         classifier,
@@ -135,8 +164,10 @@ def main() -> None:
             max_candidates=args.max_candidates,
         ),
     )
+    log_stage("Computed summary-level validation metrics", run_start)
 
     classifier.save(args.output_model_path)
+    log_stage(f"Saved trained model to {args.output_model_path}", run_start)
 
     metrics_payload = {
         "sentence_classification": sentence_metrics,
@@ -156,6 +187,7 @@ def main() -> None:
         args.metrics_output_path.parent.mkdir(parents=True, exist_ok=True)
         with args.metrics_output_path.open("w", encoding="utf-8") as file_handle:
             json.dump(metrics_payload, file_handle, indent=2)
+        log_stage(f"Saved metrics to {args.metrics_output_path}", run_start)
 
     print(json.dumps(metrics_payload, indent=2))
     print(f"Saved trained model to {args.output_model_path}")

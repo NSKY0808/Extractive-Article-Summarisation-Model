@@ -98,6 +98,8 @@ python scripts/summarize_article.py --model-path experiments/extractive_model.pk
 
 Latest benchmark date: April 20, 2026.
 
+These are the tracked benchmark metrics currently surfaced in the demo frontend and sourced from `project-root/experiments/improved/benchmark_summary.json`.
+
 Shared setup for all models:
 
 - Train records: `1500`
@@ -137,7 +139,13 @@ The latest evaluation summary is stored in:
 
 - `project-root/experiments/improved/benchmark_summary.json`
 
-This file records the April 20, 2026 benchmark metrics used in this README.
+This file records the April 20, 2026 benchmark metrics used in this README and now also powers the benchmark views in the demo frontend.
+
+## Current Demo Model Note
+
+- The demo app loads the `*_15k_model.pkl` files from `project-root/experiments/`.
+- The tracked benchmark table above reflects the latest checked-in evaluation run, which used `1500/200/200` train, validation, and test records.
+- A fresh end-to-end 15k retraining pass is being optimized in the training pipeline; until that re-benchmark is completed, the README and frontend intentionally label the displayed scores as benchmark metrics rather than confirmed 15k evaluation metrics.
 
 ## Notes
 

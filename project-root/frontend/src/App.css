@@ -1,0 +1,222 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(circle at top left, rgba(191, 175, 147, 0.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(123, 115, 94, 0.12), transparent 28%),
+    linear-gradient(180deg, #f7f3eb 0%, #f3efe7 40%, #efe9de 100%);
+  color: #2f2a24;
+  min-height: 100vh;
+}
+
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.ambient-orb {
+  position: fixed;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(22px);
+  opacity: 0.55;
+}
+
+.ambient-orb-left {
+  width: 18rem;
+  height: 18rem;
+  left: -5rem;
+  top: 7rem;
+  background: rgba(216, 199, 168, 0.42);
+}
+
+.ambient-orb-right {
+  width: 24rem;
+  height: 24rem;
+  right: -8rem;
+  top: 2rem;
+  background: rgba(183, 174, 150, 0.28);
+}
+
+.app-header {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 52px auto 0;
+  padding: 20px 4px 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 6px 12px;
+  border: 1px solid rgba(76, 66, 52, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 252, 247, 0.66);
+  color: #6b6255;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-header h1 {
+  max-width: 760px;
+  font-size: clamp(2.5rem, 5vw, 4.35rem);
+  line-height: 1.02;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  color: #221d17;
+}
+
+.app-header p {
+  max-width: 700px;
+  margin-top: 18px;
+  color: #5f5549;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.tab-navigation {
+  position: sticky;
+  top: 20px;
+  z-index: 3;
+  display: inline-flex;
+  gap: 8px;
+  margin: 28px auto 0;
+  padding: 7px;
+  background: rgba(255, 250, 243, 0.82);
+  border: 1px solid rgba(84, 72, 55, 0.12);
+  border-radius: 999px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 32px rgba(74, 62, 44, 0.08);
+}
+
+.tab-btn {
+  padding: 11px 18px;
+  font-size: 0.95rem;
+  border: none;
+  background: transparent;
+  color: #685f54;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.22s ease, color 0.22s ease, transform 0.22s ease;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: 600;
+}
+
+.tab-btn:hover {
+  background: rgba(121, 109, 89, 0.08);
+  color: #302922;
+}
+
+.tab-btn.active {
+  background: #26211c;
+  color: #f7f1e8;
+  box-shadow: 0 10px 22px rgba(38, 33, 28, 0.18);
+}
+
+.app-main {
+  flex: 1;
+  padding: 38px 18px 64px;
+  max-width: 1320px;
+  margin: 0 auto;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.demo-section,
+.comparison-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.error-message {
+  background: rgba(153, 77, 51, 0.08);
+  border: 1px solid rgba(153, 77, 51, 0.16);
+  padding: 16px 18px;
+  border-radius: 20px;
+  color: #724734;
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 20px;
+  gap: 16px;
+}
+
+.spinner {
+  border: 2px solid rgba(90, 80, 64, 0.14);
+  border-top: 2px solid #2e2822;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner p {
+  color: #675d52;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 0.96rem;
+}
+
+.app-footer {
+  padding: 24px 20px 34px;
+  text-align: center;
+  color: #6f6659;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 0.92rem;
+  margin-top: auto;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    width: min(100%, calc(100% - 1.25rem));
+    margin-top: 28px;
+  }
+
+  .app-header h1 {
+    font-size: clamp(2.1rem, 10vw, 3rem);
+  }
+
+  .app-header p {
+    font-size: 0.96rem;
+  }
+
+  .tab-navigation {
+    top: 12px;
+  }
+
+  .app-main {
+    padding: 24px 10px 44px;
+  }
+}

@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import os
+from pathlib import Path
 from typing import Iterable, Iterator, List, Mapping, Optional, Sequence
 
 from .data_pipeline import clean_sentence_text, is_boilerplate_sentence, sentence_tokenize, word_tokenize
@@ -227,8 +228,13 @@ class CNNDailyMailDatasetLoader:
             os.environ["HF_DATASETS_OFFLINE"] = "1"
             os.environ["HF_HUB_OFFLINE"] = "1"
 
+            cached_records = self._load_records_from_local_arrow_cache()
+            if cached_records is not None:
+                return cached_records
+
         DownloadConfig, load_dataset = _require_datasets_library()
         dataset = None
+        requested_split = self._build_requested_split()
 
         if self.config.prefer_local_cache:
             try:
@@ -242,7 +248,7 @@ class CNNDailyMailDatasetLoader:
                 dataset = load_dataset(
                     self.config.dataset_name,
                     self.config.dataset_version,
-                    split=self.config.split,
+                    split=requested_split,
                     streaming=self.config.streaming,
                     download_config=DownloadConfig(local_files_only=True),
                 )
@@ -255,7 +261,7 @@ class CNNDailyMailDatasetLoader:
             dataset = load_dataset(
                 self.config.dataset_name,
                 self.config.dataset_version,
-                split=self.config.split,
+                split=requested_split,
                 streaming=self.config.streaming,
             )
 
@@ -279,6 +285,75 @@ class CNNDailyMailDatasetLoader:
                 break
 
         return records
+
+    def _build_requested_split(self) -> str:
+        """Request only the needed prefix of a split when a sample limit is set."""
+
+        if self.config.streaming or self.config.sample_limit is None:
+            return self.config.split
+        return f"{self.config.split}[:{self.config.sample_limit}]"
+
+    def _load_records_from_local_arrow_cache(self) -> Optional[List[ArticleSummaryRecord]]:
+        """Load records directly from the cached Arrow shards when available."""
+
+        arrow_files = self._find_local_arrow_files()
+        if not arrow_files:
+            return None
+
+        try:
+            import pyarrow.ipc as ipc
+        except ImportError:
+            return None
+
+        records: List[ArticleSummaryRecord] = []
+        for arrow_file in arrow_files:
+            with arrow_file.open("rb") as file_handle:
+                reader = ipc.open_stream(file_handle)
+                for batch in reader:
+                    for record in batch.to_pylist():
+                        article_text = str(record[self.config.article_field]).strip()
+                        summary_text = str(record[self.config.summary_field]).strip()
+                        if not article_text or not summary_text:
+                            continue
+
+                        records.append(
+                            ArticleSummaryRecord(
+                                article_id=_safe_record_id(record, len(records), self.config.id_field),
+                                article_text=article_text,
+                                summary_text=summary_text,
+                                split=self.config.split,
+                            )
+                        )
+
+                        if self.config.sample_limit is not None and len(records) >= self.config.sample_limit:
+                            return records
+
+        return records
+
+    def _find_local_arrow_files(self) -> List[Path]:
+        """Find cached Arrow files for the requested split in the HF datasets cache."""
+
+        cache_root = Path.home() / ".cache" / "huggingface" / "datasets"
+        dataset_root = cache_root / self.config.dataset_name / self.config.dataset_version / "0.0.0"
+        if not dataset_root.exists():
+            return []
+
+        split_patterns = {
+            "train": "cnn_dailymail-train-*.arrow",
+            "validation": "cnn_dailymail-validation.arrow",
+            "test": "cnn_dailymail-test.arrow",
+        }
+        pattern = split_patterns.get(self.config.split)
+        if pattern is None:
+            return []
+
+        for cache_dir in sorted(dataset_root.iterdir(), reverse=True):
+            if not cache_dir.is_dir():
+                continue
+            matches = sorted(cache_dir.glob(pattern))
+            if matches:
+                return matches
+        return []
 
     def iter_records(self) -> Iterator[ArticleSummaryRecord]:
         """Yield records one by one to support streaming workflows."""

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 import math
 import re
 from typing import Dict, List, Mapping, Sequence, Tuple
@@ -75,12 +76,14 @@ def clean_sentence_text(sentence: str) -> str:
     return cleaned.strip(" -\t\r\n")
 
 
+@lru_cache(maxsize=50000)
 def word_tokenize(text: str) -> List[str]:
     """Tokenize a text span into lowercase word tokens."""
 
     return [match.group(0).lower() for match in WORD_PATTERN.finditer(text)]
 
 
+@lru_cache(maxsize=20000)
 def sentence_tokenize(text: str) -> List[str]:
     """Split article text into sentence-like spans using punctuation cues."""
 
